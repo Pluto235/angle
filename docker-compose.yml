@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: angle
+      POSTGRES_USER: angle
+      POSTGRES_PASSWORD: angle
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U angle -d angle"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://angle:angle@db:5432/angle?schema=public
+      AUTH_SECRET: change-me-in-production
+      NEXT_TELEMETRY_DISABLED: "1"
+      NODE_ENV: production
+    command: sh -c "npx prisma db push && npm run start"
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:

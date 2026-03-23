@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PoolStatus {
+  PENDING
+  ASSIGNED
+  INVALIDATED
+}
+
+model User {
+  id           String        @id @default(cuid())
+  username     String        @unique
+  email        String        @unique
+  passwordHash String
+  createdAt    DateTime      @default(now())
+  pools        Pool[]        @relation("PoolOwner")
+  participants Participant[]
+}
+
+model Pool {
+  id                String        @id @default(cuid())
+  ownerUserId       String
+  title             String
+  status            PoolStatus    @default(PENDING)
+  revealAllEnabled  Boolean       @default(false)
+  currentRound      Int           @default(0)
+  createdAt         DateTime      @default(now())
+  owner             User          @relation("PoolOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  participants      Participant[]
+  assignments       Assignment[]
+
+  @@index([ownerUserId, createdAt(sort: Desc)])
+}
+
+model Participant {
+  id               String       @id @default(cuid())
+  poolId           String
+  userId           String?
+  displayName      String
+  normalizedName   String
+  isOwner          Boolean      @default(false)
+  browserTokenHash String?
+  createdAt        DateTime     @default(now())
+  deletedAt        DateTime?
+  pool             Pool         @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  user             User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  giverAssignments Assignment[] @relation("AssignmentGiver")
+  targetAssignments Assignment[] @relation("AssignmentTarget")
+
+  @@unique([poolId, normalizedName])
+  @@unique([poolId, browserTokenHash])
+  @@index([poolId, deletedAt])
+}
+
+model Assignment {
+  id            String      @id @default(cuid())
+  poolId        String
+  roundNo       Int
+  giverId       String
+  targetId      String
+  createdAt     DateTime    @default(now())
+  invalidatedAt DateTime?
+  pool          Pool        @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  giver         Participant @relation("AssignmentGiver", fields: [giverId], references: [id], onDelete: Cascade)
+  target        Participant @relation("AssignmentTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([poolId, roundNo, giverId])
+  @@index([poolId, roundNo, invalidatedAt])
+}
