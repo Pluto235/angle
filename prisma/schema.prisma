@@ -12,6 +12,11 @@ enum PoolStatus {
   INVALIDATED
 }
 
+enum ParticipantGender {
+  MALE
+  FEMALE
+}
+
 model User {
   id           String        @id @default(cuid())
   username     String        @unique
@@ -27,9 +32,12 @@ model Pool {
   ownerUserId       String
   title             String
   status            PoolStatus    @default(PENDING)
+  spicyModeEnabled  Boolean       @default(false)
+  boomerangModeEnabled Boolean    @default(false)
   revealAllEnabled  Boolean       @default(false)
   currentRound      Int           @default(0)
   createdAt         DateTime      @default(now())
+  deletedAt         DateTime?
   owner             User          @relation("PoolOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
   participants      Participant[]
   assignments       Assignment[]
@@ -43,6 +51,7 @@ model Participant {
   userId           String?
   displayName      String
   normalizedName   String
+  gender           ParticipantGender?
   isOwner          Boolean      @default(false)
   browserTokenHash String?
   createdAt        DateTime     @default(now())

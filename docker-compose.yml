@@ -1,36 +1,41 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: m.daocloud.io/docker.io/postgres:16-alpine
+    container_name: angle-db
     restart: unless-stopped
+    env_file:
+      - .env.production
     environment:
-      POSTGRES_DB: angle
-      POSTGRES_USER: angle
-      POSTGRES_PASSWORD: angle
+      POSTGRES_DB: ${POSTGRES_DB:-angle}
+      POSTGRES_USER: ${POSTGRES_USER:-angle}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-angle}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U angle -d angle"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-angle} -d ${POSTGRES_DB:-angle}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 20
 
   web:
+    image: angel-app
+    container_name: angle-web
     build:
       context: .
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://angle:angle@db:5432/angle?schema=public
-      AUTH_SECRET: change-me-in-production
-      NEXT_TELEMETRY_DISABLED: "1"
-      NODE_ENV: production
-    command: sh -c "npx prisma db push && npm run start"
+    env_file:
+      - .env.production
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
 
 volumes:
   postgres_data:

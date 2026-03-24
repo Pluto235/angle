@@ -1,12 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { startTransition, useState } from "react";
+import { useState } from "react";
 
 export function CreatePoolForm() {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [spicyModeEnabled, setSpicyModeEnabled] = useState(false);
+  const [boomerangModeEnabled, setBoomerangModeEnabled] = useState(false);
 
   async function handleSubmit(formData: FormData) {
     setPending(true);
@@ -21,6 +21,9 @@ export function CreatePoolForm() {
         body: JSON.stringify({
           title: String(formData.get("title") ?? ""),
           ownerDisplayName: String(formData.get("ownerDisplayName") ?? ""),
+          spicyModeEnabled,
+          boomerangModeEnabled,
+          ownerGender: formData.get("ownerGender") ? String(formData.get("ownerGender")) : undefined,
         }),
       });
 
@@ -30,10 +33,8 @@ export function CreatePoolForm() {
         throw new Error(payload?.error ?? "创建失败");
       }
 
-      startTransition(() => {
-        router.push(`/pools/${payload.pool.id}/manage`);
-        router.refresh();
-      });
+      window.location.assign(`/pools/${payload.pool.id}`);
+      return;
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "创建失败");
     } finally {
@@ -45,8 +46,8 @@ export function CreatePoolForm() {
     <section className="card accent-card">
       <div className="section-head">
         <span className="section-tag">创建池子</span>
-        <h2>现在开始组局</h2>
-        <p>池主必须参与抽签，所以需要填写你在当前池子中的显示名字。</p>
+        <h2>创建池子</h2>
+        <p>{spicyModeEnabled ? "开丘比特后需选性别。" : "池主也会参与抽签。"}</p>
       </div>
       <form
         className="form-stack"
@@ -61,16 +62,47 @@ export function CreatePoolForm() {
         </label>
         <label className="field">
           <span>你在池中的名字</span>
-          <input
-            name="ownerDisplayName"
-            type="text"
-            placeholder="这个名字会参与抽签"
-            required
-            maxLength={24}
-          />
+          <input name="ownerDisplayName" type="text" placeholder="会参与抽签" required maxLength={24} />
         </label>
+        <div className="mode-grid">
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={spicyModeEnabled}
+              onChange={(event) => {
+                setSpicyModeEnabled(event.target.checked);
+              }}
+            />
+            <span>丘比特</span>
+          </label>
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={boomerangModeEnabled}
+              onChange={(event) => {
+                setBoomerangModeEnabled(event.target.checked);
+              }}
+            />
+            <span>回旋镖</span>
+          </label>
+        </div>
+        {spicyModeEnabled ? (
+          <fieldset className="field choice-field">
+            <span>池主性别</span>
+            <div className="choice-grid choice-grid-compact">
+              <label className="choice-chip">
+                <input name="ownerGender" type="radio" value="MALE" required />
+                <span>男生</span>
+              </label>
+              <label className="choice-chip">
+                <input name="ownerGender" type="radio" value="FEMALE" required />
+                <span>女生</span>
+              </label>
+            </div>
+          </fieldset>
+        ) : null}
         <button className="primary-button" type="submit" disabled={pending}>
-          {pending ? "创建中..." : "创建池子并进入管理页"}
+          {pending ? "创建中..." : "创建池子"}
         </button>
         {error ? <p className="error-text">{error}</p> : null}
       </form>

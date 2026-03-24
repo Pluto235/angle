@@ -1,5 +1,12 @@
-.next
 node_modules
-npm-debug.log*
+.next
+.git
+.gitignore
+.pglite-data
+.pglite-data-test
+coverage
+work
+*.log
 .env
 .env.local
+.env.production

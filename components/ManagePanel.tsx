@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { startTransition, useState } from "react";
+import { useState } from "react";
 
 type Participant = {
   id: string;
@@ -37,17 +36,16 @@ async function request(url: string, options?: RequestInit) {
 }
 
 export function ManagePanel({ poolId, status, revealAllEnabled, participants, results }: Props) {
-  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
-  function refreshWithMessage(nextMessage: string) {
+  function navigateWithMessage(nextMessage: string, targetUrl: string) {
     setMessage(nextMessage);
     setError(null);
-    startTransition(() => {
-      router.refresh();
-    });
+    window.setTimeout(() => {
+      window.location.replace(targetUrl);
+    }, 350);
   }
 
   async function handleAssign() {
@@ -55,14 +53,14 @@ export function ManagePanel({ poolId, status, revealAllEnabled, participants, re
     setError(null);
 
     try {
-      await request("/api/assign", {
+      const payload = await request("/api/assign", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ poolId }),
       });
-      refreshWithMessage("分发完成");
+      navigateWithMessage(`已分发，第 ${payload.result.roundNo} 轮`, `/pools/${poolId}`);
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "分发失败");
     } finally {
@@ -71,7 +69,7 @@ export function ManagePanel({ poolId, status, revealAllEnabled, participants, re
   }
 
   async function handleReshuffle() {
-    if (!window.confirm("当前结果将作废，确认继续重洗吗？")) {
+    if (!window.confirm("重洗后旧结果作废，继续？")) {
       return;
     }
 
@@ -79,14 +77,14 @@ export function ManagePanel({ poolId, status, revealAllEnabled, participants, re
     setError(null);
 
     try {
-      await request("/api/reshuffle", {
+      const payload = await request("/api/reshuffle", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ poolId, confirm: true }),
       });
-      refreshWithMessage("已重洗并重新分发");
+      navigateWithMessage(`已重洗，第 ${payload.result.roundNo} 轮`, `/pools/${poolId}`);
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "重洗失败");
     } finally {
@@ -95,7 +93,7 @@ export function ManagePanel({ poolId, status, revealAllEnabled, participants, re
   }
 
   async function handleRevealAll() {
-    if (!window.confirm("将破坏匿名性，确认解锁全部结果吗？")) {
+    if (!window.confirm("解锁后所有结果可见，继续？")) {
       return;
     }
 
@@ -110,7 +108,7 @@ export function ManagePanel({ poolId, status, revealAllEnabled, participants, re
         },
         body: JSON.stringify({ poolId, confirm: true }),
       });
-      refreshWithMessage("已解锁全部结果");
+      navigateWithMessage("已解锁", `/pools/${poolId}/manage`);
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "解锁失败");
     } finally {
@@ -119,7 +117,7 @@ export function ManagePanel({ poolId, status, revealAllEnabled, participants, re
   }
 
   async function handleDeleteParticipant(participantId: string, displayName: string) {
-    if (!window.confirm(`删除 ${displayName} 后，当前结果会立即作废。确认继续吗？`)) {
+    if (!window.confirm(`删除 ${displayName} 后结果作废，继续？`)) {
       return;
     }
 
@@ -130,7 +128,7 @@ export function ManagePanel({ poolId, status, revealAllEnabled, participants, re
       await request(`/api/participants/${participantId}`, {
         method: "DELETE",
       });
-      refreshWithMessage(`已删除 ${displayName}`);
+      navigateWithMessage(`已删除 ${displayName}`, `/pools/${poolId}/manage`);
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "删除失败");
     } finally {
@@ -143,17 +141,17 @@ export function ManagePanel({ poolId, status, revealAllEnabled, participants, re
       <section className="card">
         <div className="section-head">
           <span className="section-tag">管理动作</span>
-          <h2>控制当前轮次</h2>
-          <p>删除参与者会立即作废当前结果。已分发状态下可重洗，重洗会生成新一轮结果。</p>
+          <h2>管理</h2>
+          <p>删人会作废结果。</p>
         </div>
         <div className="button-row">
           {status === "PENDING" || status === "INVALIDATED" ? (
             <button className="primary-button" onClick={() => void handleAssign()} disabled={pendingAction !== null}>
-              {pendingAction === "assign" ? "处理中..." : status === "PENDING" ? "开始分发" : "重新分发"}
+              {pendingAction === "assign" ? "处理中..." : status === "PENDING" ? "分发" : "重分发"}
             </button>
           ) : (
             <button className="primary-button" onClick={() => void handleReshuffle()} disabled={pendingAction !== null}>
-              {pendingAction === "reshuffle" ? "处理中..." : "重洗并重新分发"}
+              {pendingAction === "reshuffle" ? "处理中..." : "重洗"}
             </button>
           )}
           <button
@@ -161,7 +159,7 @@ export function ManagePanel({ poolId, status, revealAllEnabled, participants, re
             onClick={() => void handleRevealAll()}
             disabled={pendingAction !== null || status !== "ASSIGNED" || revealAllEnabled}
           >
-            {pendingAction === "reveal" ? "处理中..." : revealAllEnabled ? "已解锁全部结果" : "解锁全部结果"}
+            {pendingAction === "reveal" ? "处理中..." : revealAllEnabled ? "已解锁" : "解锁"}
           </button>
         </div>
         {error ? <p className="error-text">{error}</p> : null}
@@ -172,14 +170,13 @@ export function ManagePanel({ poolId, status, revealAllEnabled, participants, re
         <div className="section-head">
           <span className="section-tag">参与名单</span>
           <h2>共 {participants.length} 人</h2>
-          <p>池主必须保留在名单中，普通参与者可被删除，删除后不能在同一浏览器再次加入。</p>
+          <p>池主固定保留。</p>
         </div>
         <div className="participant-list">
           {participants.map((participant) => (
             <article className="participant-row" key={participant.id}>
               <div>
                 <strong>{participant.displayName}</strong>
-                <p>{participant.isOwner ? "池主" : "参与者"}</p>
               </div>
               {participant.isOwner ? (
                 <span className="pill">固定保留</span>
@@ -201,7 +198,7 @@ export function ManagePanel({ poolId, status, revealAllEnabled, participants, re
         <div className="section-head">
           <span className="section-tag">全部结果</span>
           <h2>{revealAllEnabled ? "已解锁" : "默认匿名"}</h2>
-          <p>{revealAllEnabled ? "以下是当前轮次全部配对。" : "池主默认看不到全部结果，需主动解锁后才会展示。"}</p>
+          <p>{revealAllEnabled ? "当前轮次结果。" : "解锁后查看。"}</p>
         </div>
         {revealAllEnabled ? (
           <div className="result-list">

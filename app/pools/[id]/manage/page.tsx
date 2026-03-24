@@ -43,7 +43,9 @@ export default async function ManagePage({
             <span className="section-tag">管理页</span>
             <h1>{data.pool.title}</h1>
             <p>
-              {formatStatusLabel(data.pool.status)} · {data.pool.participantCount} 人 · 创建于{" "}
+              {formatStatusLabel(data.pool.status)} · {data.pool.participantCount} 人
+              {data.pool.spicyModeEnabled ? " · 丘比特" : ""}
+              {data.pool.boomerangModeEnabled ? " · 回旋镖" : ""} · 创建于{" "}
               {formatDateTime(data.pool.createdAt)}
             </p>
           </div>
@@ -54,12 +56,12 @@ export default async function ManagePage({
             </article>
             <article>
               <strong>匿名模式</strong>
-              <p>{data.pool.revealAllEnabled ? "已解锁全部结果" : "池主默认不可见"}</p>
+              <p>{data.pool.revealAllEnabled ? "已解锁" : "默认匿名"}</p>
             </article>
             <article>
               <strong>公共入口</strong>
               <Link className="ghost-link strong-link" href={`/pools/${data.pool.id}`}>
-                查看池子页
+                池子页
               </Link>
             </article>
           </div>
@@ -69,7 +71,7 @@ export default async function ManagePage({
           poolId={data.pool.id}
           status={data.pool.status}
           revealAllEnabled={data.pool.revealAllEnabled}
-          participants={data.pool.participants.map((participant) => ({
+          participants={data.pool.participants.map((participant: (typeof data.pool.participants)[number]) => ({
             id: participant.id,
             displayName: participant.displayName,
             isOwner: participant.isOwner,

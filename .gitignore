@@ -2,7 +2,9 @@
 node_modules
 .env
 .env.local
+.env.production.local
 npm-debug.log*
 coverage
 .pglite-data
 .pglite-data-test
+work/

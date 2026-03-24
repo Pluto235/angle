@@ -2,6 +2,9 @@ import { z } from "zod";
 
 import { collapseSpaces } from "./utils";
 
+export const genderValues = ["MALE", "FEMALE"] as const;
+export const genderSchema = z.enum(genderValues);
+
 export const registerSchema = z.object({
   username: z
     .string()
@@ -28,6 +31,17 @@ export const createPoolSchema = z.object({
     .transform((value) => collapseSpaces(value))
     .refine((value) => value.length >= 1, "请输入你在池中的名字")
     .refine((value) => value.length <= 24, "名字最多 24 个字符"),
+  spicyModeEnabled: z.boolean().optional().default(false),
+  boomerangModeEnabled: z.boolean().optional().default(false),
+  ownerGender: genderSchema.optional(),
+}).superRefine((data, ctx) => {
+  if (data.spicyModeEnabled && !data.ownerGender) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["ownerGender"],
+      message: "丘比特模式必须选择性别",
+    });
+  }
 });
 
 export const joinPoolSchema = z.object({
@@ -36,6 +50,7 @@ export const joinPoolSchema = z.object({
     .transform((value) => collapseSpaces(value))
     .refine((value) => value.length >= 1, "请输入名字")
     .refine((value) => value.length <= 24, "名字最多 24 个字符"),
+  gender: genderSchema.optional(),
 });
 
 export const poolActionSchema = z.object({

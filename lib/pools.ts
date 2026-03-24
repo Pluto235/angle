@@ -1,4 +1,4 @@
-import { PoolStatus, Prisma } from "@prisma/client";
+import { ParticipantGender, PoolStatus, Prisma } from "@prisma/client";
 
 import { AppError } from "./errors";
 import { prisma } from "./prisma";
@@ -21,20 +21,224 @@ type ViewerContext = {
   browserToken?: string | null;
 };
 
-function buildSattoloTargets(participantIds: string[]) {
+type AssignableParticipant = {
+  id: string;
+  gender: ParticipantGender | null;
+};
+
+type AssignmentPreferences = {
+  cupidEnabled: boolean;
+  boomerangEnabled: boolean;
+};
+
+function shuffleIds(participantIds: string[]) {
   const ids = [...participantIds];
 
   for (let index = ids.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * index);
+    const swapIndex = Math.floor(Math.random() * (index + 1));
     [ids[index], ids[swapIndex]] = [ids[swapIndex], ids[index]];
   }
 
   return ids;
 }
 
+function buildDerangementTargets(participantIds: string[]) {
+  if (participantIds.length === 2) {
+    return [participantIds[1], participantIds[0]];
+  }
+
+  for (let attempt = 0; attempt < 128; attempt += 1) {
+    const candidate = shuffleIds(participantIds);
+
+    if (candidate.every((targetId, index) => targetId !== participantIds[index])) {
+      return candidate;
+    }
+  }
+
+  return [...participantIds.slice(1), participantIds[0]];
+}
+
+function isSameAssignment(
+  previousTargets: Map<string, string>,
+  giverIds: string[],
+  targetIds: string[],
+) {
+  return giverIds.every((giverId, index) => previousTargets.get(giverId) === targetIds[index]);
+}
+
+function countOppositeGenderMatches(
+  participantGenderMap: Map<string, ParticipantGender | null>,
+  giverIds: string[],
+  targetIds: string[],
+) {
+  let matches = 0;
+
+  for (let index = 0; index < giverIds.length; index += 1) {
+    const giverGender = participantGenderMap.get(giverIds[index]);
+    const targetGender = participantGenderMap.get(targetIds[index]);
+
+    if (giverGender && targetGender && giverGender !== targetGender) {
+      matches += 1;
+    }
+  }
+
+  return matches;
+}
+
+function getMaxOppositeGenderMatches(participants: AssignableParticipant[]) {
+  const maleCount = participants.filter((participant) => participant.gender === ParticipantGender.MALE).length;
+  const femaleCount = participants.filter((participant) => participant.gender === ParticipantGender.FEMALE).length;
+
+  return Math.min(participants.length, Math.min(maleCount, femaleCount) * 2);
+}
+
+function countSmallCycleCoverage(giverIds: string[], targetIds: string[]) {
+  const nextByGiver = new Map(giverIds.map((giverId, index) => [giverId, targetIds[index]]));
+  const visited = new Set<string>();
+  let coveredParticipants = 0;
+  let smallCycleCount = 0;
+
+  for (const giverId of giverIds) {
+    if (visited.has(giverId)) {
+      continue;
+    }
+
+    const cycleOrder: string[] = [];
+    const indexById = new Map<string, number>();
+    let currentId = giverId;
+
+    while (!visited.has(currentId) && !indexById.has(currentId)) {
+      indexById.set(currentId, cycleOrder.length);
+      cycleOrder.push(currentId);
+
+      const nextId = nextByGiver.get(currentId);
+
+      if (!nextId) {
+        break;
+      }
+
+      currentId = nextId;
+    }
+
+    for (const id of cycleOrder) {
+      visited.add(id);
+    }
+
+    const cycleStart = indexById.get(currentId);
+
+    if (cycleStart === undefined) {
+      continue;
+    }
+
+    const cycleSize = cycleOrder.length - cycleStart;
+
+    if (cycleSize >= 3 && cycleSize <= 5) {
+      coveredParticipants += cycleSize;
+      smallCycleCount += 1;
+    }
+  }
+
+  return {
+    coveredParticipants,
+    smallCycleCount,
+  };
+}
+
+function pickTargetIds(
+  participants: AssignableParticipant[],
+  previousTargets: Map<string, string>,
+  preferences: AssignmentPreferences,
+) {
+  const participantIds = participants.map((participant) => participant.id);
+
+  if (!preferences.cupidEnabled && !preferences.boomerangEnabled) {
+    let targetIds = buildDerangementTargets(participantIds);
+
+    if (previousTargets.size > 0 && participantIds.length > 2) {
+      let retries = 0;
+
+      while (isSameAssignment(previousTargets, participantIds, targetIds) && retries < 12) {
+        targetIds = buildDerangementTargets(participantIds);
+        retries += 1;
+      }
+    }
+
+    return targetIds;
+  }
+
+  const participantGenderMap = new Map(participants.map((participant) => [participant.id, participant.gender]));
+  const maxOppositeMatches = preferences.cupidEnabled ? getMaxOppositeGenderMatches(participants) : 0;
+  const attempts = Math.max(120, participantIds.length * 120);
+
+  let bestTargetIds = buildDerangementTargets(participantIds);
+  let bestOppositeMatches = preferences.cupidEnabled
+    ? countOppositeGenderMatches(participantGenderMap, participantIds, bestTargetIds)
+    : 0;
+  let bestCycleScore = preferences.boomerangEnabled
+    ? countSmallCycleCoverage(participantIds, bestTargetIds)
+    : { coveredParticipants: 0, smallCycleCount: 0 };
+  let bestChangedScore =
+    previousTargets.size === 0 || !isSameAssignment(previousTargets, participantIds, bestTargetIds) ? 1 : 0;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const candidateTargetIds = buildDerangementTargets(participantIds);
+    const candidateOppositeMatches = preferences.cupidEnabled
+      ? countOppositeGenderMatches(participantGenderMap, participantIds, candidateTargetIds)
+      : 0;
+    const candidateCycleScore = preferences.boomerangEnabled
+      ? countSmallCycleCoverage(participantIds, candidateTargetIds)
+      : { coveredParticipants: 0, smallCycleCount: 0 };
+    const candidateChangedScore =
+      previousTargets.size === 0 || !isSameAssignment(previousTargets, participantIds, candidateTargetIds) ? 1 : 0;
+
+    const prefersCandidate =
+      (preferences.cupidEnabled && candidateOppositeMatches > bestOppositeMatches) ||
+      (preferences.cupidEnabled &&
+        candidateOppositeMatches === bestOppositeMatches &&
+        preferences.boomerangEnabled &&
+        candidateCycleScore.coveredParticipants > bestCycleScore.coveredParticipants) ||
+      (preferences.cupidEnabled &&
+        candidateOppositeMatches === bestOppositeMatches &&
+        preferences.boomerangEnabled &&
+        candidateCycleScore.coveredParticipants === bestCycleScore.coveredParticipants &&
+        candidateCycleScore.smallCycleCount > bestCycleScore.smallCycleCount) ||
+      (!preferences.cupidEnabled &&
+        preferences.boomerangEnabled &&
+        candidateCycleScore.coveredParticipants > bestCycleScore.coveredParticipants) ||
+      (!preferences.cupidEnabled &&
+        preferences.boomerangEnabled &&
+        candidateCycleScore.coveredParticipants === bestCycleScore.coveredParticipants &&
+        candidateCycleScore.smallCycleCount > bestCycleScore.smallCycleCount) ||
+      (candidateOppositeMatches === bestOppositeMatches &&
+        candidateCycleScore.coveredParticipants === bestCycleScore.coveredParticipants &&
+        candidateCycleScore.smallCycleCount === bestCycleScore.smallCycleCount &&
+        candidateChangedScore > bestChangedScore);
+
+    if (prefersCandidate) {
+      bestTargetIds = candidateTargetIds;
+      bestOppositeMatches = candidateOppositeMatches;
+      bestCycleScore = candidateCycleScore;
+      bestChangedScore = candidateChangedScore;
+
+      if (
+        (!preferences.cupidEnabled || bestOppositeMatches >= maxOppositeMatches) &&
+        (!preferences.boomerangEnabled || bestCycleScore.coveredParticipants >= Math.min(participantIds.length, 5)) &&
+        bestChangedScore === 1
+      ) {
+        break;
+      }
+    }
+  }
+
+  return bestTargetIds;
+}
+
 async function getPoolWithParticipants(poolId: string) {
-  return prisma.pool.findUnique({
-    where: { id: poolId },
+  return prisma.pool.findFirst({
+    where: {
+      id: poolId,
+      deletedAt: null,
+    },
     include: {
       owner: {
         select: {
@@ -53,6 +257,7 @@ async function getPoolWithParticipants(poolId: string) {
         select: {
           id: true,
           displayName: true,
+          gender: true,
           isOwner: true,
           userId: true,
           browserTokenHash: true,
@@ -107,14 +312,19 @@ async function resolveViewerParticipant(poolId: string, viewer: ViewerContext) {
 }
 
 export async function getOwnedPools(userId: string) {
-  return prisma.pool.findMany({
-    where: { ownerUserId: userId },
+  const pools = await prisma.pool.findMany({
+    where: {
+      ownerUserId: userId,
+      deletedAt: null,
+    },
     orderBy: {
       createdAt: "desc",
     },
     select: {
       id: true,
       title: true,
+      spicyModeEnabled: true,
+      boomerangModeEnabled: true,
       status: true,
       revealAllEnabled: true,
       currentRound: true,
@@ -130,6 +340,18 @@ export async function getOwnedPools(userId: string) {
       },
     },
   });
+
+  return pools.map((pool) => ({
+    id: pool.id,
+    title: pool.title,
+    spicyModeEnabled: pool.spicyModeEnabled,
+    boomerangModeEnabled: pool.boomerangModeEnabled,
+    status: pool.status,
+    revealAllEnabled: pool.revealAllEnabled,
+    currentRound: pool.currentRound,
+    createdAt: pool.createdAt,
+    participantCount: pool._count.participants,
+  }));
 }
 
 export async function createPool(input: unknown, userId: string) {
@@ -141,12 +363,16 @@ export async function createPool(input: unknown, userId: string) {
 
   const title = sanitizePoolTitle(parsed.data.title);
   const ownerDisplayName = sanitizeDisplayName(parsed.data.ownerDisplayName);
+  const spicyModeEnabled = parsed.data.spicyModeEnabled;
+  const boomerangModeEnabled = parsed.data.boomerangModeEnabled;
 
   return prisma.$transaction(async (tx) => {
     const pool = await tx.pool.create({
       data: {
         title,
         ownerUserId: userId,
+        spicyModeEnabled,
+        boomerangModeEnabled,
       },
       select: {
         id: true,
@@ -160,6 +386,7 @@ export async function createPool(input: unknown, userId: string) {
         userId,
         displayName: ownerDisplayName,
         normalizedName: normalizeName(ownerDisplayName),
+        gender: parsed.data.ownerGender,
         isOwner: true,
       },
     });
@@ -184,15 +411,22 @@ export async function joinPool(input: unknown, poolId: string, browserToken: str
     select: {
       id: true,
       status: true,
+      spicyModeEnabled: true,
+      boomerangModeEnabled: true,
+      deletedAt: true,
     },
   });
 
-  if (!pool) {
+  if (!pool || pool.deletedAt) {
     throw new AppError("池子不存在", 404, "POOL_NOT_FOUND");
   }
 
   if (pool.status !== PoolStatus.PENDING) {
     throw new AppError("分发后禁止新加入", 409, "POOL_LOCKED");
+  }
+
+  if (pool.spicyModeEnabled && !parsed.data.gender) {
+    throw new AppError("丘比特模式必须选择性别", 409, "GENDER_REQUIRED");
   }
 
   const existingBrowserJoin = await prisma.participant.findFirst({
@@ -215,6 +449,7 @@ export async function joinPool(input: unknown, poolId: string, browserToken: str
         poolId,
         displayName,
         normalizedName,
+        gender: parsed.data.gender,
         browserTokenHash,
       },
       select: {
@@ -242,12 +477,13 @@ export async function deleteParticipant(participantId: string, requesterUserId: 
           ownerUserId: true,
           status: true,
           currentRound: true,
+          deletedAt: true,
         },
       },
     },
   });
 
-  if (!participant || participant.deletedAt) {
+  if (!participant || participant.deletedAt || participant.pool.deletedAt) {
     throw new AppError("参与者不存在", 404, "PARTICIPANT_NOT_FOUND");
   }
 
@@ -315,8 +551,31 @@ async function assignRound(poolId: string, requesterUserId: string) {
     throw new AppError("参与人数至少 2 人才能分发", 409, "NOT_ENOUGH_PARTICIPANTS");
   }
 
-  const participantIds = pool.participants.map((participant) => participant.id);
-  const targetIds = buildSattoloTargets(participantIds);
+  const participants = pool.participants.map((participant) => ({
+    id: participant.id,
+    gender: participant.gender ?? null,
+  }));
+  const participantIds = participants.map((participant) => participant.id);
+  const previousAssignments =
+    pool.currentRound > 0
+      ? await prisma.assignment.findMany({
+          where: {
+            poolId,
+            roundNo: pool.currentRound,
+            invalidatedAt: null,
+          },
+          select: {
+            giverId: true,
+            targetId: true,
+          },
+        })
+      : [];
+
+  const previousTargetMap = new Map(previousAssignments.map((assignment) => [assignment.giverId, assignment.targetId]));
+  const targetIds = pickTargetIds(participants, previousTargetMap, {
+    cupidEnabled: pool.spicyModeEnabled,
+    boomerangEnabled: pool.boomerangModeEnabled,
+  });
 
   return prisma.$transaction(async (tx) => {
     const now = new Date();
@@ -374,10 +633,11 @@ export async function assignPool(input: unknown, requesterUserId: string) {
       id: true,
       status: true,
       ownerUserId: true,
+      deletedAt: true,
     },
   });
 
-  if (!pool) {
+  if (!pool || pool.deletedAt) {
     throw new AppError("池子不存在", 404, "POOL_NOT_FOUND");
   }
 
@@ -405,10 +665,11 @@ export async function reshufflePool(input: unknown, requesterUserId: string) {
       id: true,
       status: true,
       ownerUserId: true,
+      deletedAt: true,
     },
   });
 
-  if (!pool) {
+  if (!pool || pool.deletedAt) {
     throw new AppError("池子不存在", 404, "POOL_NOT_FOUND");
   }
 
@@ -437,10 +698,11 @@ export async function revealAll(input: unknown, requesterUserId: string) {
       status: true,
       ownerUserId: true,
       revealAllEnabled: true,
+      deletedAt: true,
     },
   });
 
-  if (!pool) {
+  if (!pool || pool.deletedAt) {
     throw new AppError("池子不存在", 404, "POOL_NOT_FOUND");
   }
 
@@ -480,10 +742,11 @@ export async function getMySlip(poolId: string, viewer: ViewerContext) {
       status: true,
       currentRound: true,
       ownerUserId: true,
+      deletedAt: true,
     },
   });
 
-  if (!pool) {
+  if (!pool || pool.deletedAt) {
     throw new AppError("池子不存在", 404, "POOL_NOT_FOUND");
   }
 
@@ -549,10 +812,11 @@ export async function getAllResults(poolId: string, requesterUserId: string) {
       status: true,
       revealAllEnabled: true,
       currentRound: true,
+      deletedAt: true,
     },
   });
 
-  if (!pool) {
+  if (!pool || pool.deletedAt) {
     throw new AppError("池子不存在", 404, "POOL_NOT_FOUND");
   }
 
@@ -617,6 +881,8 @@ export async function getPoolPageData(poolId: string, viewer: ViewerContext) {
     pool: {
       id: pool.id,
       title: pool.title,
+      spicyModeEnabled: pool.spicyModeEnabled,
+      boomerangModeEnabled: pool.boomerangModeEnabled,
       status: pool.status,
       revealAllEnabled: pool.revealAllEnabled,
       currentRound: pool.currentRound,
@@ -633,4 +899,60 @@ export async function getPoolPageData(poolId: string, viewer: ViewerContext) {
     slip,
     results,
   };
+}
+
+export async function deletePool(poolId: string, requesterUserId: string) {
+  const pool = await prisma.pool.findUnique({
+    where: { id: poolId },
+    select: {
+      id: true,
+      ownerUserId: true,
+      deletedAt: true,
+    },
+  });
+
+  if (!pool || pool.deletedAt) {
+    throw new AppError("池子不存在", 404, "POOL_NOT_FOUND");
+  }
+
+  if (pool.ownerUserId !== requesterUserId) {
+    throw new AppError("仅池主可删除池子", 403, "FORBIDDEN");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const now = new Date();
+
+    await tx.assignment.updateMany({
+      where: {
+        poolId,
+        invalidatedAt: null,
+      },
+      data: {
+        invalidatedAt: now,
+      },
+    });
+
+    await tx.participant.updateMany({
+      where: {
+        poolId,
+        deletedAt: null,
+      },
+      data: {
+        deletedAt: now,
+      },
+    });
+
+    await tx.pool.update({
+      where: { id: poolId },
+      data: {
+        deletedAt: now,
+        status: PoolStatus.INVALIDATED,
+        revealAllEnabled: false,
+      },
+    });
+
+    return {
+      ok: true,
+    };
+  });
 }

@@ -13,8 +13,6 @@ export NEXT_TELEMETRY_DISABLED="${NEXT_TELEMETRY_DISABLED:-1}"
 
 cd "$ROOT_DIR"
 
-node ./scripts/init-pglite-db.mjs
-
 cleanup() {
   if [[ -n "${PGLITE_PID:-}" ]] && kill -0 "$PGLITE_PID" >/dev/null 2>&1; then
     kill "$PGLITE_PID" >/dev/null 2>&1 || true
@@ -45,5 +43,17 @@ if ! ss -ltn | grep -q ":${DB_PORT} "; then
   exit 1
 fi
 
+node ./scripts/init-pglite-db.mjs
+
 npm run build
-exec npm run start
+
+rm -rf .next/standalone/.next/static
+mkdir -p .next/standalone/.next
+cp -R .next/static .next/standalone/.next/static
+
+if [[ -d public ]]; then
+  rm -rf .next/standalone/public
+  cp -R public .next/standalone/public
+fi
+
+exec node .next/standalone/server.js

@@ -19,7 +19,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
               <span className="brand-kicker">ANGLE</span>
               <strong>天使与主人</strong>
             </Link>
-            <p className="brand-copy">匿名抽签、浏览器身份保存、池主可控重洗。</p>
+            <p className="brand-copy">匿名抽签工具</p>
           </header>
           <main>{children}</main>
         </div>

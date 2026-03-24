@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { startTransition, useState } from "react";
+import { useState } from "react";
 
 type FormState = {
   error: string | null;
@@ -52,9 +52,10 @@ export function AuthPanel() {
         error: null,
         success: "注册并登录成功",
       });
-      startTransition(() => {
+      window.setTimeout(() => {
+        router.replace("/");
         router.refresh();
-      });
+      }, 0);
     } catch (error) {
       setRegisterState({
         error: error instanceof Error ? error.message : "注册失败",
@@ -79,9 +80,10 @@ export function AuthPanel() {
         error: null,
         success: "登录成功",
       });
-      startTransition(() => {
+      window.setTimeout(() => {
+        router.replace("/");
         router.refresh();
-      });
+      }, 0);
     } catch (error) {
       setLoginState({
         error: error instanceof Error ? error.message : "登录失败",
@@ -97,8 +99,8 @@ export function AuthPanel() {
       <section className="card">
         <div className="section-head">
           <span className="section-tag">注册</span>
-          <h2>创建池主账号</h2>
-          <p>只有池主需要注册。创建池子时，你会自动成为其中一名参与者。</p>
+          <h2>注册</h2>
+          <p>注册后可建池。</p>
         </div>
         <form
           className="form-stack"
@@ -120,7 +122,7 @@ export function AuthPanel() {
             <input name="password" type="password" placeholder="至少 6 位" required minLength={6} />
           </label>
           <button className="primary-button" type="submit" disabled={pending === "register"}>
-            {pending === "register" ? "注册中..." : "注册并登录"}
+            {pending === "register" ? "注册中..." : "注册"}
           </button>
           {registerState.error ? <p className="error-text">{registerState.error}</p> : null}
           {registerState.success ? <p className="success-text">{registerState.success}</p> : null}
@@ -130,8 +132,8 @@ export function AuthPanel() {
       <section className="card">
         <div className="section-head">
           <span className="section-tag">登录</span>
-          <h2>进入你的管理台</h2>
-          <p>登录后可以创建池子、分发结果、删除参与者和解锁全部结果。</p>
+          <h2>登录</h2>
+          <p>登录后可管理池子。</p>
         </div>
         <form
           className="form-stack"
