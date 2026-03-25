@@ -51,16 +51,45 @@ npm run dev
 
 4. 打开 `http://localhost:3000`
 
-## 一键启动
+## Docker 部署
+
+首次部署前，先复制模板文件为 `.env`：
 
 ```bash
-docker compose up --build
+cp .env.production .env
 ```
 
-## 生产环境注意
+然后编辑 `.env`，至少确认这些变量：
+
+- `AUTH_SECRET`
+- `DATABASE_URL`
+- `POSTGRES_DB`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+
+实际运行统一使用 `.env`。`docker compose` 和 `deploy.sh` 都不会再直接读取 `.env.production`。
+
+启动：
+
+```bash
+docker compose --env-file .env up -d --build
+```
+
+更新：
+
+```bash
+./deploy.sh
+```
+
+## 部署注意
+
+- `.env.production` 现在只是模板文件，部署前请复制为 `.env`
+- 如果你修改了数据库账号密码，旧的 PostgreSQL 数据卷不会自动跟着更新
+- 开发 / 测试环境如需重建数据库，可以执行 `docker compose --env-file .env down -v`
+- 生产环境不要随便执行 `down -v`，否则会删除数据库卷
+- 生产环境如使用 HTTPS，应设置 `COOKIE_SECURE="true"`
 
 - 必须修改 `AUTH_SECRET`
-- 生产环境如使用 HTTPS，应设置 `COOKIE_SECURE="true"`
 - 当前为 MVP，数据库结构通过 `prisma db push` 同步
 - 匿名身份依赖浏览器 Cookie，清除后将无法找回纸条
 - `npm run web:local` 仅用于本地开发/演示，不替代正式 PostgreSQL 部署

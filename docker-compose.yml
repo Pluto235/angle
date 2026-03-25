@@ -4,7 +4,7 @@ services:
     container_name: angle-db
     restart: unless-stopped
     env_file:
-      - .env.production
+      - .env
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-angle}
       POSTGRES_USER: ${POSTGRES_USER:-angle}
@@ -33,7 +33,7 @@ services:
       db:
         condition: service_healthy
     env_file:
-      - .env.production
+      - .env
     ports:
       - "${PORT:-3000}:3000"
 
